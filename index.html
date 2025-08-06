@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Tokens ChatGPT</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .card h2 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.2rem;
+        }
+        .stat {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .chart-container {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+        .chart-container h2 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .loading {
+            text-align: center;
+            color: white;
+            font-size: 1.5rem;
+            margin-top: 50px;
+        }
+        .filters {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .filters select, .filters button {
+            padding: 10px 15px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            font-size: 14px;
+        }
+        .filters button {
+            background: #667eea;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .filters button:hover {
+            background: #5a67d8;
+        }
+        .tabla {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+        }
+        tr:hover {
+            background: #f8f9fa;
+        }
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge-high {
+            background: #ffebee;
+            color: #c62828;
+        }
+        .badge-medium {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+        .badge-low {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Dashboard de Tokens ChatGPT</h1>
+        
+        <div class="filters">
+            <select id="periodoSelect">
+                <option value="7">Últimos 7 días</option>
+                <option value="30" selected>Últimos 30 días</option>
+                <option value="90">Últimos 90 días</option>
+                <option value="all">Todo</option>
+            </select>
+            <button onclick="actualizarDatos()">🔄 Actualizar</button>
+            <button onclick="exportarCSV()">📥 Exportar CSV</button>
+        </div>
+
+        <div class="dashboard">
+            <div class="card">
+                <h2>Total Conversaciones</h2>
+                <div class="stat" id="totalConversaciones">-</div>
+            </div>
+            <div class="card">
+                <h2>Tokens Promedio</h2>
+                <div class="stat" id="tokensPromedio">-</div>
+            </div>
+            <div class="card">
+                <h2>Calidad Promedio</h2>
+                <div class="stat" id="calidadPromedio">-</div>
+            </div>
+            <div class="card">
+                <h2>Uso Máximo Contexto</h2>
+                <div class="stat" id="usoMaximo">-</div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <h2>📈 Evolución de Tokens en el Tiempo</h2>
+            <canvas id="chartTiempo"></canvas>
+        </div>
+
+        <div class="dashboard">
+            <div class="chart-container" style="flex: 1;">
+                <h2>📊 Distribución por Calidad</h2>
+                <canvas id="chartCalidad"></canvas>
+            </div>
+            <div class="chart-container" style="flex: 1;">
+                <h2>🎯 Uso del Contexto</h2>
+                <canvas id="chartContexto"></canvas>
+            </div>
+        </div>
+
+        <div class="tabla">
+            <h2>📋 Últimas Conversaciones</h2>
+            <table id="tablaConversaciones">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Tokens</th>
+                        <th>Uso Contexto</th>
+                        <th>Calidad</th>
+                        <th>Mensajes</th>
+                    </tr>
+                </thead>
+                <tbody id="tablaDatos">
+                    <tr><td colspan="5">Cargando...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="loading" id="loading">⏳ Cargando datos...</div>
+    </div>
+
+    <script>
+        // Configuración de Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyD-onIDmTizUGPb8Ou_7SiEBzumptUuGOw",
+            authDomain: "tokens-y-ventanas-de-contexto.firebaseapp.com",
+            projectId: "tokens-y-ventanas-de-contexto",
+            storageBucket: "tokens-y-ventanas-de-contexto.firebasestorage.app",
+            messagingSenderId: "708655558389",
+            appId: "1:708655558389:web:df8986231cb84fb5369fbc"
+        };
+        
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        
+        let datosGlobales = [];
+        let chartTiempo, chartCalidad, chartContexto;
+
+        async function cargarDatos() {
+            const periodo = document.getElementById('periodoSelect').value;
+            let query = db.collection("contexto_chatgpt").orderBy("fecha", "desc");
+            
+            if (periodo !== 'all') {
+                const diasAtras = new Date();
+                diasAtras.setDate(diasAtras.getDate() - parseInt(periodo));
+                query = query.where("fecha", ">=", diasAtras.toISOString());
+            }
+            
+            try {
+                const snapshot = await query.limit(500).get();
+                datosGlobales = [];
+                
+                snapshot.forEach((doc) => {
+                    datosGlobales.push({ id: doc.id, ...doc.data() });
+                });
+                
+                console.log(`✅ ${datosGlobales.length} registros cargados`);
+                procesarDatos();
+                document.getElementById('loading').style.display = 'none';
+                
+            } catch (error) {
+                console.error("Error cargando datos:", error);
+                document.getElementById('loading').innerHTML = 
+                    `❌ Error: ${error.message}<br>Verifica las reglas de Firestore`;
+            }
+        }
+
+        function procesarDatos() {
+            // Calcular estadísticas
+            const total = datosGlobales.length;
+            const tokensPromedio = Math.round(
+                datosGlobales.reduce((sum, d) => sum + (d.tokens || 0), 0) / total
+            );
+            const calidadPromedio = (
+                datosGlobales.reduce((sum, d) => sum + (d.calidad || 3), 0) / total
+            ).toFixed(1);
+            const usoMaximo = Math.max(...datosGlobales.map(d => d.porcentaje || 0)).toFixed(1);
+            
+            // Actualizar cards
+            document.getElementById('totalConversaciones').textContent = total;
+            document.getElementById('tokensPromedio').textContent = tokensPromedio.toLocaleString();
+            document.getElementById('calidadPromedio').textContent = `${calidadPromedio} ⭐`;
+            document.getElementById('usoMaximo').textContent = `${usoMaximo}%`;
+            
+            // Actualizar gráficos
+            actualizarGraficoTiempo();
+            actualizarGraficoCalidad();
+            actualizarGraficoContexto();
+            actualizarTabla();
+        }
+
+        function actualizarGraficoTiempo() {
+            const ctx = document.getElementById('chartTiempo').getContext('2d');
+            
+            // Agrupar por día
+            const porDia = {};
+            datosGlobales.forEach(d => {
+                const fecha = d.fecha ? d.fecha.split('T')[0] : 'Sin fecha';
+                if (!porDia[fecha]) {
+                    porDia[fecha] = { tokens: 0, count: 0 };
+                }
+                porDia[fecha].tokens += d.tokens || 0;
+                porDia[fecha].count++;
+            });
+            
+            const fechas = Object.keys(porDia).sort().slice(-30); // Últimos 30 días
+            const tokens = fechas.map(f => porDia[f].tokens);
+            const conversaciones = fechas.map(f => porDia[f].count);
+            
+            if (chartTiempo) chartTiempo.destroy();
+            
+            chartTiempo = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: fechas,
+                    datasets: [{
+                        label: 'Tokens Totales',
+                        data: tokens,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4,
+                        yAxisID: 'y'
+                    }, {
+                        label: 'Conversaciones',
+                        data: conversaciones,
+                        borderColor: '#f97316',
+                        backgroundColor: 'rgba(249, 115, 22, 0.1)',
+                        tension: 0.4,
+                        yAxisID: 'y1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'Tokens'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Conversaciones'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function actualizarGraficoCalidad() {
+            const ctx = document.getElementById('chartCalidad').getContext('2d');
+            
+            const calidades = [1, 2, 3, 4, 5];
+            const conteos = calidades.map(c => 
+                datosGlobales.filter(d => d.calidad === c).length
+            );
+            
+            if (chartCalidad) chartCalidad.destroy();
+            
+            chartCalidad = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['⭐', '⭐⭐', '⭐⭐⭐', '⭐⭐⭐⭐', '⭐⭐⭐⭐⭐'],
+                    datasets: [{
+                        label: 'Conversaciones',
+                        data: conteos,
+                        backgroundColor: [
+                            '#ef4444',
+                            '#f97316',
+                            '#eab308',
+                            '#84cc16',
+                            '#22c55e'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+
+        function actualizarGraficoContexto() {
+            const ctx = document.getElementById('chartContexto').getContext('2d');
+            
+            const rangos = [
+                { label: '0-25%', min: 0, max: 25 },
+                { label: '25-50%', min: 25, max: 50 },
+                { label: '50-75%', min: 50, max: 75 },
+                { label: '75-100%', min: 75, max: 100 }
+            ];
+            
+            const conteos = rangos.map(r => 
+                datosGlobales.filter(d => 
+                    d.porcentaje >= r.min && d.porcentaje < r.max
+                ).length
+            );
+            
+            if (chartContexto) chartContexto.destroy();
+            
+            chartContexto = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: rangos.map(r => r.label),
+                    datasets: [{
+                        data: conteos,
+                        backgroundColor: [
+                            '#22c55e',
+                            '#eab308',
+                            '#f97316',
+                            '#ef4444'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+
+        function actualizarTabla() {
+            const tbody = document.getElementById('tablaDatos');
+            const ultimos = datosGlobales.slice(0, 10);
+            
+            tbody.innerHTML = ultimos.map(d => {
+                const fecha = d.fecha ? new Date(d.fecha).toLocaleString('es-ES') : 'Sin fecha';
+                const porcentaje = d.porcentaje || 0;
+                let badgeClass = 'badge-low';
+                if (porcentaje > 75) badgeClass = 'badge-high';
+                else if (porcentaje > 50) badgeClass = 'badge-medium';
+                
+                return `
+                    <tr>
+                        <td>${fecha}</td>
+                        <td>${(d.tokens || 0).toLocaleString()}</td>
+                        <td><span class="badge ${badgeClass}">${porcentaje.toFixed(1)}%</span></td>
+                        <td>${'⭐'.repeat(d.calidad || 3)}</td>
+                        <td>${d.numMensajes || '-'}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function actualizarDatos() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('loading').innerHTML = '⏳ Actualizando...';
+            cargarDatos();
+        }
+
+        function exportarCSV() {
+            const csv = [
+                ['Fecha', 'Tokens', 'Porcentaje', 'Calidad', 'Mensajes', 'URL'],
+                ...datosGlobales.map(d => [
+                    d.fecha || '',
+                    d.tokens || 0,
+                    d.porcentaje || 0,
+                    d.calidad || 0,
+                    d.numMensajes || 0,
+                    d.url || ''
+                ])
+            ].map(row => row.join(',')).join('\n');
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `tokens_chatgpt_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+        }
+
+        // Cargar datos al iniciar
+        cargarDatos();
+        
+        // Actualizar automáticamente cada 30 segundos
+        setInterval(cargarDatos, 30000);
+    </script>
+</body>
+</html>
