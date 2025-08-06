@@ -11,8 +11,7 @@
         h1 { text-align: center; }
         .cards { display: flex; gap: 24px; justify-content: center; margin-bottom: 24px;}
         .card { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px #ccc2; padding: 20px 32px; text-align: center;}
-        .charts { display: flex; gap: 24px; justify-content: center; margin-bottom: 32px;}
-        .chart { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px #ccc2; padding: 20px; width: 360px;}
+        .chart { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px #ccc2; padding: 20px; width: 90%; max-width: 600px; margin: 30px auto; }
         table { width: 100%; border-collapse: collapse; margin-top: 24px;}
         th, td { padding: 8px 12px; border-bottom: 1px solid #eee;}
         th { background: #f0f0f0; }
@@ -24,11 +23,9 @@
         <div class="card"><div id="totalConversaciones">-</div><div>Total conversaciones</div></div>
         <div class="card"><div id="tokensPromedio">-</div><div>Tokens promedio</div></div>
         <div class="card"><div id="calidadPromedio">-</div><div>Calidad promedio</div></div>
-        <div class="card"><div id="usoMaximo">-</div><div>Uso máximo contexto</div></div>
     </div>
-    <div class="charts">
-        <div class="chart"><canvas id="chartTiempo"></canvas></div>
-        <div class="chart"><canvas id="chartContexto"></canvas></div>
+    <div class="chart">
+        <canvas id="chartTokens"></canvas>
     </div>
     <h2>Últimas Conversaciones</h2>
     <table>
@@ -47,10 +44,10 @@
         };
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
-        let chartTiempo, chartContexto;
+        let chartTokens;
 
         async function cargarDatos() {
-            const query = db.collection("contexto_chatgpt").orderBy("fecha", "desc").limit(50);
+            const query = db.collection("contexto_chatgpt").orderBy("fecha", "desc").limit(20);
             const snapshot = await query.get();
             const datos = [];
             snapshot.forEach(doc => datos.push(doc.data()));
@@ -59,39 +56,32 @@
             const total = datos.length;
             const tokensProm = total ? Math.round(datos.reduce((a, b) => a + (b.tokens || 0), 0) / total) : 0;
             const calidadProm = total ? (datos.reduce((a, b) => a + (b.calidad || 3), 0) / total).toFixed(1) : 0;
-            const usoMax = total ? Math.max(...datos.map(d => d.porcentaje || 0)).toFixed(1) : 0;
             document.getElementById('totalConversaciones').textContent = total;
             document.getElementById('tokensPromedio').textContent = tokensProm;
             document.getElementById('calidadPromedio').textContent = calidadProm + " ⭐";
-            document.getElementById('usoMaximo').textContent = usoMax + "%";
 
-            // Gráfico evolución tokens (por fecha)
-            const fechas = datos.map(d => d.fecha ? d.fecha.split('T')[0] : '');
+            // Gráfico simple de barras
             const tokens = datos.map(d => d.tokens || 0);
-            if(chartTiempo) chartTiempo.destroy();
-            chartTiempo = new Chart(document.getElementById('chartTiempo').getContext('2d'), {
-                type: 'line',
-                data: {labels: fechas, datasets: [{label: 'Tokens', data: tokens, borderColor: '#5b6bf7', fill: false}]},
-                options: {plugins:{legend:{display:false}},scales:{x:{display:false}}}
-            });
-
-            // Gráfico uso de contexto
-            const rangos = [0, 25, 50, 75, 100];
-            const conteos = [0,0,0,0];
-            datos.forEach(d => {
-                const p = d.porcentaje || 0;
-                if(p < 25) conteos[0]++; else if(p < 50) conteos[1]++;
-                else if(p < 75) conteos[2]++; else conteos[3]++;
-            });
-            if(chartContexto) chartContexto.destroy();
-            chartContexto = new Chart(document.getElementById('chartContexto').getContext('2d'), {
-                type: 'doughnut',
-                data: {labels:['0-25%','25-50%','50-75%','75-100%'], datasets:[{data:conteos, backgroundColor:['#90fbb7','#ffec8a','#fca29a','#a899e8']}]},
-                options: {plugins:{legend:{display:true}}}
+            const etiquetas = datos.map((d, i) => `Conv. ${i+1}`);
+            if(chartTokens) chartTokens.destroy();
+            chartTokens = new Chart(document.getElementById('chartTokens').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: etiquetas,
+                    datasets: [{
+                        label: 'Tokens por conversación',
+                        data: tokens,
+                        backgroundColor: '#5b6bf7'
+                    }]
+                },
+                options: {
+                    plugins: { legend: { display: false }},
+                    scales: { x: { display: false }, y: { beginAtZero: true } }
+                }
             });
 
             // Tabla
-            document.getElementById('tablaDatos').innerHTML = datos.slice(0, 10).map(d => {
+            document.getElementById('tablaDatos').innerHTML = datos.map(d => {
                 return `<tr>
                     <td>${d.fecha ? new Date(d.fecha).toLocaleString('es-ES') : '-'}</td>
                     <td>${d.tokens || '-'}</td>
